@@ -165,3 +165,51 @@ agent = create_deep_agent(
     research_instructions,
     subagents=[critique_sub_agent, research_sub_agent],
 ).with_config({"recursion_limit": 1000})
+
+
+def main():
+    """Run the research agent with a sample question."""
+
+    # Check if TAVILY_API_KEY is set
+    if not os.environ.get("TAVILY_API_KEY"):
+        print("Error: TAVILY_API_KEY environment variable is not set.")
+        print("Please get an API key from https://app.tavily.com/ and set it as:")
+        print("export TAVILY_API_KEY=your_api_key_here")
+        return
+
+    # Sample research question
+    question = input("Enter a research question (or press Enter for a sample): ").strip()
+    if not question:
+        question = "What are the latest developments in AI agents and autonomous systems in September 2025?"
+
+    print(f"\n🔍 Researching: {question}")
+    print("=" * 50)
+
+    try:
+        # Run the agent
+        result = agent.invoke({"messages": [{"role": "user", "content": question}]})
+
+        print("\n📋 Research Complete!")
+        print("=" * 50)
+
+        # Print any files created (like the final report)
+        if "files" in result and result["files"]:
+            print("\n📁 Files created:")
+            for filename, content in result["files"].items():
+                print(f"\n--- {filename} ---")
+                print(content)
+                print("-" * 40)
+
+        # Print the final message
+        if result.get("messages"):
+            final_message = result["messages"][-1]
+            if hasattr(final_message, 'content') and final_message.content:
+                print(f"\n💬 Final Response:\n{final_message.content}")
+
+    except Exception as e:
+        print(f"\n❌ Error occurred: {e}")
+        print("Make sure your TAVILY_API_KEY is valid and you have internet connectivity.")
+
+
+if __name__ == "__main__":
+    main()
