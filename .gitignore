@@ -208,3 +208,54 @@ __marimo__/
 
 # LangGraph
 .langgraph_api
+
+# ============================================================================
+# PROJECT-SPECIFIC SECURITY AND DEVELOPMENT PROTECTIONS
+# ============================================================================
+
+# Log directories that may contain sensitive debug info
+logs/
+*/logs/
+*.log
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Backup and temporary files
+*.bak
+*.backup
+*.orig
+tmp/
+temp/
+.tmp/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Documentation build
+docs/_build/
+site/
+
+# ============================================================================
+# FUTURE CONSIDERATION - Currently tracked as needed for development
+# ============================================================================
+# .claude/                    # Claude Code configuration (needed for team collaboration)
+# repos/                      # External repositories (needed for integration)
+
+# Additional environment protection (already covered by .env rule above)
+# *.env.local
+# *.env.production
+# *.env.staging

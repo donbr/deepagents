@@ -1,0 +1,377 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ master, main, develop ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "18"
+
+jobs:
+  # Lint and format checks
+  lint:
+    name: Lint and Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: |
+          uv sync --dev
+          uv pip install ruff mypy
+
+      - name: Run ruff linting
+        run: uv run ruff check .
+
+      - name: Run ruff formatting
+        run: uv run ruff format --check .
+
+      - name: Run mypy type checking
+        run: uv run mypy src/ --ignore-missing-imports
+
+  # Unit tests for core DeepAgents
+  test-core:
+    name: Test Core DeepAgents
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+        with:
+          version: "latest"
+
+      - name: Install dependencies
+        run: |
+          uv sync --dev
+          uv pip install pytest pytest-cov pytest-asyncio
+
+      - name: Run core tests
+        run: |
+          uv run pytest tests/ -v --cov=src/deepagents --cov-report=xml
+        env:
+          PYTHONPATH: src
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: core
+
+  # Integration tests for MCP RAG
+  test-mcp-rag:
+    name: Test MCP RAG Integration
+    runs-on: ubuntu-latest
+
+    services:
+      qdrant:
+        image: qdrant/qdrant:latest
+        ports:
+          - 6333:6333
+        options: >-
+          --health-cmd "curl -f http://localhost:6333/health"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 3
+
+      redis:
+        image: redis:alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 3
+
+      postgres:
+        image: postgres:15-alpine
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_DB: deepagents_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 3
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+        with:
+          version: "latest"
+
+      - name: Install MCP RAG dependencies
+        working-directory: ./integrations/mcp-rag
+        run: |
+          uv sync --dev
+          uv pip install pytest pytest-asyncio httpx
+
+      - name: Wait for services
+        run: |
+          sleep 30
+          curl -f http://localhost:6333/health
+          redis-cli -h localhost ping
+
+      - name: Run MCP RAG tests
+        working-directory: ./integrations/mcp-rag
+        run: |
+          uv run pytest tests/ -v --tb=short
+        env:
+          QDRANT_URL: http://localhost:6333
+          REDIS_URL: redis://localhost:6379
+          POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/deepagents_test
+          ANTHROPIC_API_KEY: test-key
+
+  # Security scanning
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+        with:
+          version: "latest"
+
+      - name: Install security tools
+        run: |
+          uv pip install bandit safety
+
+      - name: Run bandit security scan
+        run: |
+          uv run bandit -r src/ -f json -o bandit-report.json || true
+          uv run bandit -r src/ -ll
+
+      - name: Run safety dependency scan
+        run: |
+          uv pip freeze | uv run safety check --stdin --json --output safety-report.json || true
+          uv pip freeze | uv run safety check --stdin
+
+  # Docker build and test
+  docker:
+    name: Docker Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build MCP RAG Docker image
+        working-directory: ./integrations/mcp-rag
+        run: |
+          docker build -t deepagents-mcp-rag:test .
+
+      - name: Test Docker image
+        working-directory: ./integrations/mcp-rag
+        run: |
+          # Start services
+          docker compose up -d qdrant redis postgres
+          sleep 30
+
+          # Test health endpoints
+          curl -f http://localhost:6333/health
+          redis-cli -h localhost ping
+
+          # Test MCP server in container
+          docker run --rm --network host \
+            -e QDRANT_URL=http://localhost:6333 \
+            -e REDIS_URL=redis://localhost:6379 \
+            -e POSTGRES_URL=postgresql://postgres:postgres@localhost:5432/deepagents \
+            deepagents-mcp-rag:test \
+            python -c "import deepagents_mcp_rag; print('Import successful')"
+
+          # Cleanup
+          docker compose down -v
+
+  # Performance benchmarks
+  benchmark:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    services:
+      qdrant:
+        image: qdrant/qdrant:latest
+        ports:
+          - 6333:6333
+      redis:
+        image: redis:alpine
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+        with:
+          version: "latest"
+
+      - name: Install MCP RAG with benchmarking tools
+        working-directory: ./integrations/mcp-rag
+        run: |
+          uv sync --dev
+          uv pip install pytest-benchmark memory-profiler
+
+      - name: Run performance benchmarks
+        working-directory: ./integrations/mcp-rag
+        run: |
+          uv run python scripts/benchmark.py --output benchmarks.json
+        env:
+          QDRANT_URL: http://localhost:6333
+          REDIS_URL: redis://localhost:6379
+          ANTHROPIC_API_KEY: test-key
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v3
+        with:
+          name: benchmark-results
+          path: integrations/mcp-rag/benchmarks.json
+
+  # Documentation checks
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check CLAUDE.md format
+        run: |
+          if [ ! -f ".claude/CLAUDE.md" ]; then
+            echo "Missing .claude/CLAUDE.md"
+            exit 1
+          fi
+
+          # Check for required sections
+          grep -q "## Development Commands" .claude/CLAUDE.md
+          grep -q "## Architecture Overview" .claude/CLAUDE.md
+          grep -q "## Troubleshooting" .claude/CLAUDE.md
+
+      - name: Validate MCP configuration
+        run: |
+          if [ ! -f ".mcp.json" ]; then
+            echo "Missing .mcp.json"
+            exit 1
+          fi
+
+          # Basic JSON validation
+          python -m json.tool .mcp.json > /dev/null
+
+      - name: Check Claude Code settings
+        run: |
+          if [ ! -f ".claude/settings.json" ]; then
+            echo "Missing .claude/settings.json"
+            exit 1
+          fi
+
+          # Validate JSON structure
+          python -c "
+          import json
+          with open('.claude/settings.json') as f:
+              config = json.load(f)
+          assert 'allowedTools' in config
+          assert 'mcpServers' in config
+          "
+
+  # Release preparation
+  release:
+    name: Prepare Release
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    needs: [lint, test-core, test-mcp-rag, security, docker]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install release tools
+        run: |
+          pip install bump2version twine build
+
+      - name: Generate changelog
+        run: |
+          echo "# Changelog" > CHANGELOG.md
+          git log --oneline --pretty=format:"- %s (%h)" HEAD~10..HEAD >> CHANGELOG.md
+
+      - name: Build distribution packages
+        working-directory: ./integrations/mcp-rag
+        run: |
+          python -m build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: dist-packages
+          path: integrations/mcp-rag/dist/
+
+  # Deployment (production)
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    needs: [release]
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy notification
+        run: |
+          echo "🚀 Deployment pipeline would trigger here"
+          echo "This could include:"
+          echo "- Docker image push to registry"
+          echo "- Kubernetes deployment updates"
+          echo "- Infrastructure as Code updates"
+          echo "- Monitoring alert configurations"

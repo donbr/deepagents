@@ -1,0 +1,27 @@
+{
+  "allowedTools": [
+    "mcp__deepagents-rag__research_deep",
+    "mcp__deepagents-rag__evaluate_rag",
+    "mcp__deepagents-rag__strategy_compare",
+    "Bash(uv run:*)",
+    "Bash(uv sync:*)",
+    "Bash(docker compose:*)",
+    "Bash(docker:*)",
+    "Bash(git:*)",
+    "Bash(pytest:*)",
+    "Bash(python:*)",
+    "Read",
+    "Write",
+    "Edit",
+    "MultiEdit",
+    "Glob",
+    "Grep"
+  ],
+  "mcpOutputLimit": 50000,
+  "debugMcp": false,
+  "project": {
+    "name": "DeepAgents & MCP Integration",
+    "description": "Advanced RAG system with multi-strategy retrieval and RAGAS evaluation",
+    "version": "1.0.0"
+  }
+}

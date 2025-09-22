@@ -12,6 +12,8 @@ dependencies = [
     "tavily-python>=0.7.12",
     "langchain-openai>=0.3.33",
     "langchain-ollama>=0.3.8",
+    "fastmcp>=2.12.3",
+    "langchain-mcp-adapters>=0.1.0",
 ]
 
 

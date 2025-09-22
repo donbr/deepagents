@@ -8,9 +8,9 @@
 
 ## 0) TL;DR
 
-* **Architecture**: DeepAgents (planner, sub-agents, VFS) + MCP (Tools = commands, Resources = queries) using **CQRS** split; retrieval via a **RetrieverFactory** (bm25, vector, parent-doc, multi-query, rerank, ensemble). &#x20;
+* **Architecture**: DeepAgents (planner, sub-agents, VFS) + MCP (Tools = commands, Resources = queries) using **CQRS** split; retrieval via a **RetrieverFactory** (bm25, vector, parent-doc, multi-query, rerank, ensemble). ;
 * **Claude Code**: configure `.mcp.json` with env-expansion and per-workspace overrides; support **stdio** for local dev and **HTTP (streamable)** for team CI runs. ([Claude Docs][1]) ([Claude Docs][2])
-* **POC goals**: raw retrieval **<2s**, full answer **<8s**; RAGAS metrics + Phoenix/LangSmith traces in CI.&#x20;
+* **POC goals**: raw retrieval **<2s**, full answer **<8s**; RAGAS metrics + Phoenix/LangSmith traces in CI.;
 * **Grounding**: Patterns and steps below are derived from your attached docs and current upstream docs.   ([LangChain Docs][3])
 
 ---
@@ -56,7 +56,7 @@ integrations/mcp-rag/
     ragas-report.yml       # nightly eval & report upload
 ```
 
-**Why this shape?** Keeps **retrieval** and **agent wiring** independent from the MCP surface, enabling fast swaps of vector DBs and evaluators without changing agent code. (CQRS & modularity) &#x20;
+**Why this shape?** Keeps **retrieval** and **agent wiring** independent from the MCP surface, enabling fast swaps of vector DBs and evaluators without changing agent code. (CQRS & modularity) ;
 
 ---
 
@@ -120,7 +120,7 @@ def make_agent():
     )
 ```
 
-DeepAgents provides planner, sub-agents, and a sandbox VFS you can keep or trim via `builtin_tools`. ([GitHub][4]) ([LangChain Docs][5])&#x20;
+DeepAgents provides planner, sub-agents, and a sandbox VFS you can keep or trim via `builtin_tools`. ([GitHub][4]) ([LangChain Docs][5]);
 
 ---
 
@@ -128,7 +128,7 @@ DeepAgents provides planner, sub-agents, and a sandbox VFS you can keep or trim 
 
 * **Tools** (commands): full RAG pipeline with synthesis — `agent.research(question, strategy="auto")`
 * **Resources** (queries): raw retrieval — `retriever://{strategy}/{query}` (JSON docs/snippets)
-  This dual surface avoids duplication and gives **3–5×** faster responses for quick lookups while preserving a full-answer path.&#x20;
+  This dual surface avoids duplication and gives **3–5×** faster responses for quick lookups while preserving a full-answer path.;
 
 ```python
 # integrations/mcp-rag/src/mcp/server.py
@@ -177,8 +177,8 @@ def make(strategy: str, **kw):
     return REGISTRY[strategy](**kw)
 ```
 
-* Strategy selection guidelines & performance trade-offs reflect your plan and literature. &#x20;
-* Ensemble/RRF and parent-doc patterns are first-class. ([Reddit][8])&#x20;
+* Strategy selection guidelines & performance trade-offs reflect your plan and literature. ;
+* Ensemble/RRF and parent-doc patterns are first-class. ([Reddit][8]);
 
 ---
 
@@ -195,14 +195,14 @@ def run_ragas(dataset):
     return evaluate(dataset, metrics=[answer_relevancy, context_precision, context_recall, faithfulness])
 ```
 
-* Use **golden\_set.jsonl** (10–20 Q/A). Metrics + CSV/JSON artifacts are emitted in CI.&#x20;
-* LangSmith + Phoenix spans (strategy, k, latency, tokens, scores) for every step (plan→search→synthesize).&#x20;
+* Use **golden\_set.jsonl** (10–20 Q/A). Metrics + CSV/JSON artifacts are emitted in CI.;
+* LangSmith + Phoenix spans (strategy, k, latency, tokens, scores) for every step (plan→search→synthesize).;
 
 ### 6.2 Telemetry
 
 * **Phoenix**: local dev OpenTelemetry collector (`4317`)
 * **LangSmith**: prod-like tracing and dataset runs
-* Adopt GenAI semantic attributes for spans. (See Observability notes.)&#x20;
+* Adopt GenAI semantic attributes for spans. (See Observability notes.);
 
 ---
 
@@ -338,21 +338,21 @@ curl 'http://localhost:6277/mcp/retriever://bm25/DeepAgents%20planner'
 uv run integrations/mcp-rag/src/eval/cli.py --dataset integrations/mcp-rag/src/eval/golden_set.jsonl
 ```
 
-8. **Open traces** in Phoenix ([http://localhost:6006](http://localhost:6006)) and LangSmith (if key provided).&#x20;
+8. **Open traces** in Phoenix ([http://localhost:6006](http://localhost:6006)) and LangSmith (if key provided).;
 
 9. **PR checklist**
 
-* Meets **<2s/<8s** targets on local stack; eval artifacts attached; CI green.&#x20;
+* Meets **<2s/<8s** targets on local stack; eval artifacts attached; CI green.;
 
 ---
 
 ## 10) Security, scaling, and ops notes
 
-* **VFS is sandboxed** (DeepAgents files are not OS files). Keep tool surface minimal; rate-limit & audit.&#x20;
+* **VFS is sandboxed** (DeepAgents files are not OS files). Keep tool surface minimal; rate-limit & audit.;
 * **Transport**: stdio for local trust boundary; streamable HTTP in containers for shared use. ([Claude Docs][2])
-* **Caching**: result + embedding + doc caches; measure hit rates and regressions in CI.&#x20;
-* **Version pinning**: lock DeepAgents, FastMCP, LangChain to avoid schema drift.&#x20;
-* **Risks**: tool hallucination, long-horizon loops; mitigate with strict tool registry and max-steps.&#x20;
+* **Caching**: result + embedding + doc caches; measure hit rates and regressions in CI.;
+* **Version pinning**: lock DeepAgents, FastMCP, LangChain to avoid schema drift.;
+* **Risks**: tool hallucination, long-horizon loops; mitigate with strict tool registry and max-steps.;
 
 ---
 
@@ -360,10 +360,10 @@ uv run integrations/mcp-rag/src/eval/cli.py --dataset integrations/mcp-rag/src/e
 
 ### A) Attached project docs (primary)
 
-* **DeepAgents & MCP Integration for Advanced RAG Systems** — analysis & roadmap. &#x20;
-* **LangChain Local-Deep-Researcher: MCP-Based RAG Enhancement Plan v3** — phased plan & patterns. &#x20;
-* **Enhancing Local Deep Researcher with MCP-Based Retrieval & Evaluation (PDF)** — CQRS + quick-wins + eval. &#x20;
-* **Research Prompt & INSTRUCTIONS** — acceptance targets, artifacts list.&#x20;
+* **DeepAgents & MCP Integration for Advanced RAG Systems** — analysis & roadmap. ;
+* **LangChain Local-Deep-Researcher: MCP-Based RAG Enhancement Plan v3** — phased plan & patterns. ;
+* **Enhancing Local Deep Researcher with MCP-Based Retrieval & Evaluation (PDF)** — CQRS + quick-wins + eval. ;
+* **Research Prompt & INSTRUCTIONS** — acceptance targets, artifacts list.;
 
 ### B) Upstream & official docs (current as of 2025-09-21)
 
@@ -425,10 +425,10 @@ if __name__ == "__main__":
 ## 13) Definition of Done (DoD)
 
 * [ ] `.mcp.json` works in Claude Code; tool + resource invocations succeed. ([Claude Docs][1])
-* [ ] **RetrieverFactory** exposes 6 strategies; **ensemble** is default.&#x20;
-* [ ] RAGAS metrics produced and uploaded in CI artifacts; traces visible (Phoenix/LangSmith).&#x20;
-* [ ] **Performance**: P50 raw retrieval <2s; full answer <8s on dev laptop (compose).&#x20;
-* [ ] Security checklist: tool registry locked, max-steps enforced, rate limits configured.&#x20;
+* [ ] **RetrieverFactory** exposes 6 strategies; **ensemble** is default.;
+* [ ] RAGAS metrics produced and uploaded in CI artifacts; traces visible (Phoenix/LangSmith).;
+* [ ] **Performance**: P50 raw retrieval <2s; full answer <8s on dev laptop (compose).;
+* [ ] Security checklist: tool registry locked, max-steps enforced, rate limits configured.;
 
 ---
 

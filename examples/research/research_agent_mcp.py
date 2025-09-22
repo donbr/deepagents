@@ -10,17 +10,19 @@ from typing import Literal
 
 from deepagents import async_create_deep_agent, SubAgent
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_mcp_adapters.tools import load_mcp_tools
 
 # Global MCP client and tools
 mcp_client = None
 search_tool = None
+mcp_session_context = None
 
 async def initialize_mcp():
-    """Initialize MCP client and get search tool"""
-    global mcp_client, search_tool
+    """Initialize MCP client with proper session management to avoid connection storms"""
+    global mcp_client, search_tool, mcp_session_context
 
     if mcp_client is None:
-        print("🔗 Initializing MCP client...")
+        print("🔗 Initializing MCP client with persistent session...")
         mcp_client = MultiServerMCPClient({
             "tavily-remote": {
                 "transport": "stdio",
@@ -33,7 +35,13 @@ async def initialize_mcp():
             }
         })
 
-        tools = await mcp_client.get_tools()
+        # Create explicit session to avoid new connections per tool call
+        print("📡 Creating persistent MCP session...")
+        mcp_session_context = mcp_client.session("tavily-remote")
+        session = await mcp_session_context.__aenter__()
+
+        # Load tools from the persistent session
+        tools = await load_mcp_tools(session)
         print(f"📦 Available MCP tools: {[tool.name for tool in tools]}")
 
         # Find the tavily_search tool
@@ -47,9 +55,19 @@ async def initialize_mcp():
         if not search_tool:
             raise RuntimeError("Tavily search tool not found in MCP server")
 
-        print("✅ MCP integration ready!")
+        print("✅ MCP integration ready with persistent session!")
 
     return search_tool
+
+async def cleanup_mcp():
+    """Clean up MCP session"""
+    global mcp_session_context
+    if mcp_session_context:
+        try:
+            await mcp_session_context.__aexit__(None, None, None)
+            print("🔗 MCP session closed")
+        except Exception as e:
+            print(f"⚠️  Error closing MCP session: {e}")
 
 # Sub-agent prompts (simplified for demo)
 research_sub_agent = {
@@ -137,6 +155,9 @@ async def main():
         print("Make sure your TAVILY_API_KEY is valid and you have internet connectivity.")
         import traceback
         traceback.print_exc()
+    finally:
+        # Clean up MCP session
+        await cleanup_mcp()
 
 if __name__ == "__main__":
     print("🚀 DeepAgents Research Agent with MCP Integration")

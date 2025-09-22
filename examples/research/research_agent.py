@@ -1,15 +1,29 @@
 import os
 from typing import Literal
-import asyncio
 
-from deepagents import async_create_deep_agent, SubAgent
-from langchain_mcp_adapters.client import MultiServerMCPClient
+from tavily import TavilyClient
 
-# Initialize MCP client for research tools
-mcp_client = None
+from deepagents import create_deep_agent, SubAgent
+
+# It's best practice to initialize the client once and reuse it.
+tavily_client = TavilyClient(api_key=os.environ["TAVILY_API_KEY"])
 
 
-# MCP client will be initialized when creating the agent
+# Search tool to use to do research
+def internet_search(
+    query: str,
+    max_results: int = 5,
+    topic: Literal["general", "news", "finance"] = "general",
+    include_raw_content: bool = False,
+):
+    """Run a web search"""
+    search_docs = tavily_client.search(
+        query,
+        max_results=max_results,
+        include_raw_content=include_raw_content,
+        topic=topic,
+    )
+    return search_docs
 
 
 sub_research_prompt = """You are a dedicated researcher. Your job is to conduct research based on the users questions.
@@ -144,52 +158,15 @@ You have access to a few tools.
 Use this to run an internet search for a given query. You can specify the number of results, the topic, and whether raw content should be included.
 """
 
-# We'll create the agent dynamically with MCP tools
-agent = None
-
-async def get_research_agent():
-    """Initialize and return the research agent with MCP tools"""
-    global agent
-    if agent is None:
-        # Get MCP tools first
-        client = MultiServerMCPClient({
-            "tavily-remote": {
-                "transport": "stdio",
-                "command": "npx",
-                "args": [
-                    "-y",
-                    "mcp-remote",
-                    f"https://mcp.tavily.com/mcp/?tavilyApiKey={os.environ['TAVILY_API_KEY']}"
-                ]
-            }
-        })
-
-        tools = await client.get_tools()
-
-        # Find the tavily_search tool and rename it to internet_search for compatibility
-        tavily_tool = None
-        for tool in tools:
-            if tool.name == "tavily_search":
-                tavily_tool = tool
-                # Update the tool name to match what the agent expects
-                tool.name = "internet_search"
-                break
-
-        if not tavily_tool:
-            print(f"Available tools: {[tool.name for tool in tools]}")
-            raise RuntimeError("Tavily search tool not found in MCP server")
-
-        # Create agent with MCP tools
-        agent = async_create_deep_agent(
-            tools=[tavily_tool],
-            instructions=research_instructions,
-            subagents=[critique_sub_agent, research_sub_agent],
-        ).with_config({"recursion_limit": 1000})
-
-    return agent
+# Create the agent
+agent = create_deep_agent(
+    [internet_search],
+    research_instructions,
+    subagents=[critique_sub_agent, research_sub_agent],
+).with_config({"recursion_limit": 1000})
 
 
-async def main():
+def main():
     """Run the research agent with a sample question."""
 
     # Check if TAVILY_API_KEY is set
@@ -212,11 +189,8 @@ async def main():
     print("=" * 50)
 
     try:
-        # Get the agent with MCP tools
-        agent = await get_research_agent()
-
         # Run the agent
-        result = await agent.ainvoke({"messages": [{"role": "user", "content": question}]})
+        result = agent.invoke({"messages": [{"role": "user", "content": question}]})
 
         print("\n📋 Research Complete!")
         print("=" * 50)
@@ -238,9 +212,7 @@ async def main():
     except Exception as e:
         print(f"\n❌ Error occurred: {e}")
         print("Make sure your TAVILY_API_KEY is valid and you have internet connectivity.")
-        import traceback
-        traceback.print_exc()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

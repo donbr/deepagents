@@ -1,0 +1,172 @@
+version: '3.8'
+
+services:
+  # Qdrant vector database for semantic search
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: deepagents-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"  # gRPC port
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__LOG_LEVEL=INFO
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - deepagents-network
+
+  # Redis for caching
+  redis:
+    image: redis:alpine
+    container_name: deepagents-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - deepagents-network
+
+  # PostgreSQL for metadata and evaluation storage
+  postgres:
+    image: postgres:15-alpine
+    container_name: deepagents-postgres
+    environment:
+      POSTGRES_DB: deepagents
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      PGDATA: /data/postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/data/postgres
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - deepagents-network
+
+  # Phoenix for local observability
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    container_name: deepagents-phoenix
+    ports:
+      - "6006:6006"  # Web UI
+      - "4317:4317"  # OTLP gRPC
+      - "4318:4318"  # OTLP HTTP
+    environment:
+      - PHOENIX_SQL_DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/phoenix
+      - PHOENIX_ENABLE_PROMETHEUS=true
+      - PHOENIX_ENABLE_OTLP=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6006/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - deepagents-network
+
+  # MCP RAG Server (commented out for local development)
+  # Uncomment to run in container mode
+  # mcp-server:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: deepagents-mcp
+  #   ports:
+  #     - "6277:6277"
+  #   environment:
+  #     - QDRANT_URL=http://qdrant:6333
+  #     - REDIS_URL=redis://redis:6379
+  #     - POSTGRES_URL=postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/deepagents
+  #     - PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:4317
+  #     - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+  #     - LOG_LEVEL=${LOG_LEVEL:-INFO}
+  #   command: ["python", "-m", "deepagents_mcp_rag.mcp.server", "--transport", "http", "--host", "0.0.0.0", "--port", "6277"]
+  #   depends_on:
+  #     - qdrant
+  #     - redis
+  #     - postgres
+  #     - phoenix
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:6277/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #   restart: unless-stopped
+  #   networks:
+  #     - deepagents-network
+
+  # Redis Commander (optional, for cache inspection)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: deepagents-redis-commander
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - deepagents-network
+    profiles:
+      - debug
+
+  # pgAdmin (optional, for database management)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: deepagents-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@deepagents.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+    ports:
+      - "8082:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - deepagents-network
+    profiles:
+      - debug
+
+volumes:
+  qdrant_data:
+    driver: local
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  deepagents-network:
+    driver: bridge

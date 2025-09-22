@@ -72,6 +72,48 @@ PYTHONPATH=../../src uv run python test_mcp_simple.py
 - **Claude Code Integration**: Works seamlessly with Claude Code MCP ecosystem
 - **Remote vs Local**: Can switch between remote and local MCP servers
 
+## Connection Management Best Practices
+
+### ⚠️ Critical: Avoid Connection Storms
+
+**Problem**: Using `client.get_tools()` directly creates a new MCP session for each tool call, causing connection spam.
+
+**❌ Wrong Approach (Connection Storm)**:
+```python
+# DON'T DO THIS - Creates new session per tool call
+client = MultiServerMCPClient({...})
+tools = await client.get_tools()  # ⚠️ Connection storm!
+```
+
+**✅ Correct Approach (Session Management)**:
+```python
+# DO THIS - Use explicit session management
+from langchain_mcp_adapters.tools import load_mcp_tools
+
+client = MultiServerMCPClient({...})
+session_context = client.session("server-name")
+session = await session_context.__aenter__()
+
+# Load tools from persistent session
+tools = await load_mcp_tools(session)
+
+# Always cleanup
+await session_context.__aexit__(None, None, None)
+```
+
+### Session Lifecycle Management
+
+1. **Create persistent session** using `client.session()`
+2. **Load tools once** from session using `load_mcp_tools()`
+3. **Reuse tools** throughout agent execution
+4. **Clean up session** on completion or error
+
+### Performance Impact
+
+- **Before Fix**: 20+ connections per research query
+- **After Fix**: Single persistent connection
+- **Benefit**: Reduced server load, faster execution, cleaner logs
+
 ## Next Steps
 
 ### Phase 2: Multi-MCP Enhancement

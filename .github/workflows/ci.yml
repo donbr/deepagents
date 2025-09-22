@@ -1,0 +1,197 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+      qdrant:
+        image: qdrant/qdrant:latest
+        options: >-
+          --health-cmd "curl -f http://localhost:6333/health || exit 1"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 3
+        ports:
+          - 6333:6333
+
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: deepagents_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+
+    - name: Install dependencies
+      run: |
+        uv sync --dev
+        # Install additional test dependencies
+        uv pip install pytest-cov pytest-asyncio pytest-mock
+
+    - name: Set up environment
+      run: |
+        cp integrations/mcp-rag/.env.example integrations/mcp-rag/.env
+        # Override with test configuration
+        echo "QDRANT_URL=http://localhost:6333" >> integrations/mcp-rag/.env
+        echo "REDIS_URL=redis://localhost:6379" >> integrations/mcp-rag/.env
+        echo "POSTGRES_URL=postgresql://postgres:postgres@localhost:5432/deepagents_test" >> integrations/mcp-rag/.env
+        echo "OPENAI_API_KEY=test_key" >> integrations/mcp-rag/.env
+        echo "ANTHROPIC_API_KEY=test_key" >> integrations/mcp-rag/.env
+
+    - name: Wait for services
+      run: |
+        # Wait for services to be ready
+        timeout 60s bash -c 'until curl -f http://localhost:6333/health; do sleep 2; done'
+        timeout 60s bash -c 'until redis-cli -h localhost ping; do sleep 2; done'
+        timeout 60s bash -c 'until pg_isready -h localhost -p 5432; do sleep 2; done'
+
+    - name: Lint with ruff
+      run: |
+        uv run ruff check src/ integrations/mcp-rag/src/
+        uv run ruff format --check src/ integrations/mcp-rag/src/
+
+    - name: Type check with mypy
+      run: |
+        uv run mypy src/ integrations/mcp-rag/src/ --ignore-missing-imports
+
+    - name: Test with pytest (Core DeepAgents)
+      run: |
+        uv run pytest -v --cov=src/deepagents --cov-report=xml --cov-report=term-missing
+      env:
+        PYTHONPATH: src
+
+    - name: Test with pytest (MCP-RAG Integration)
+      working-directory: integrations/mcp-rag
+      run: |
+        PYTHONPATH=src uv run pytest tests/ -v --cov=src/deepagents_mcp_rag --cov-report=xml --cov-report=term-missing
+      env:
+        PYTHONPATH: src
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        files: ./coverage.xml,./integrations/mcp-rag/coverage.xml
+        fail_ci_if_error: true
+
+    - name: Performance baseline test
+      working-directory: integrations/mcp-rag
+      run: |
+        PYTHONPATH=src uv run python scripts/performance_baseline.py
+      env:
+        PYTHONPATH: src
+
+    - name: Integration test
+      working-directory: integrations/mcp-rag
+      run: |
+        # Test MCP server startup
+        PYTHONPATH=src timeout 30s uv run python -m deepagents_mcp_rag.mcp.server --help
+        # Test retriever factory
+        PYTHONPATH=src uv run python -c "from deepagents_mcp_rag.retrievers.factory import RetrieverFactory; print('Strategies:', len(RetrieverFactory.list_strategies()))"
+      env:
+        PYTHONPATH: src
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+
+    - name: Security scan with bandit
+      run: |
+        uv pip install bandit[toml]
+        uv run bandit -r src/ integrations/mcp-rag/src/ -f json -o bandit-report.json
+        uv run bandit -r src/ integrations/mcp-rag/src/
+
+    - name: Upload security scan results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-scan-results
+        path: bandit-report.json
+
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+
+    - name: Install dependencies
+      run: uv sync --dev
+
+    - name: Check code complexity
+      run: |
+        uv pip install radon
+        uv run radon cc src/ integrations/mcp-rag/src/ --average
+        uv run radon mi src/ integrations/mcp-rag/src/
+
+    - name: Check dependency vulnerabilities
+      run: |
+        uv pip install safety
+        uv run safety check
+
+    - name: Generate test documentation
+      run: |
+        uv pip install pytest-html
+        uv run pytest --html=test-report.html --self-contained-html || true
+
+    - name: Upload test documentation
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-documentation
+        path: test-report.html
