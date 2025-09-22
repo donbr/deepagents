@@ -136,6 +136,7 @@ celerybeat.pid
 
 # Environments
 .env
+**/.env      # ignore in subdirs
 .envrc
 .venv
 env/
@@ -250,10 +251,10 @@ docs/_build/
 site/
 
 # ============================================================================
-# FUTURE CONSIDERATION - Currently tracked as needed for development
+# SECURITY: CRITICAL - External repositories contain sensitive data
 # ============================================================================
+repos/                      # External repositories (contain .env files with API keys)
 # .claude/                    # Claude Code configuration (needed for team collaboration)
-# repos/                      # External repositories (needed for integration)
 
 # Additional environment protection (already covered by .env rule above)
 # *.env.local
