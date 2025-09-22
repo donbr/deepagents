@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "deepagents-rag": {
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "integrations/mcp-rag/minimal_test.py"
+      ],
+      "timeout": 120000
+    },
+    "tavily-remote": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://mcp.tavily.com/mcp/?tavilyApiKey=${TAVILY_API_KEY}"
+      ],
+      "env": {
+        "TAVILY_API_KEY": "${TAVILY_API_KEY}"
+      },
+      "timeout": 30000
+    }
+  }
+}
