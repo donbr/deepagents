@@ -11,6 +11,39 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - [ ] For MCP integrations, review session management - See [MCP Session Management Guide](./references/mcp-session-management-guide.md)
 - [ ] For architecture decisions, use ADR template - See [ADR Template](./references/adr-template.md)
 - [ ] Follow process checklists throughout development - See [Process Improvements](./references/process-improvements-checklists.md)
+- [ ] **SECURITY VALIDATION**: For any commits involving external repos/sensitive data - See Security Process below
+
+## 🚨 MANDATORY SECURITY PROCESS
+
+**CRITICAL**: The following security incident occurred due to failure to follow proper validation:
+- API keys exposed in git history via embedded repositories
+- Emergency remediation required (force push, key rotation)
+- GitGuardian security alert triggered
+
+**NEVER SKIP THESE SECURITY STEPS:**
+
+### **Required Security Validation Before ANY Sensitive Commits:**
+1. **Use MCP Research Tools** - Research git behavior, security implications via `brave-search`, `fetch`, `sequential-thinking`
+2. **Run TruffleHog Scan** - `trufflehog git file://. --only-verified`
+3. **Run Gitleaks Scan** - `gitleaks detect --source . --verbose` (most likely the additional tool - verify with user)
+4. **Test with Dummy Data** - Verify protection mechanisms work with non-sensitive test data
+5. **Use `git check-ignore`** - Verify .gitignore effectiveness on actual file paths
+6. **Sequential Thinking Analysis** - Systematic security analysis via MCP tools
+
+### **Git Operations with Embedded Repositories:**
+- **NEVER** use `git add --force` on directories containing .env files
+- **ALWAYS** research embedded git repository behavior first
+- **TEST** .gitignore protection before adding sensitive directories
+- **ASK** for confirmation when uncertain about security implications
+
+### **Action Items:**
+- [x] Research additional security tool - **Gitleaks** identified as most likely candidate
+- [ ] Verify Gitleaks is the correct tool and proper command syntax
+- [ ] Create automated pre-commit hooks for security validation
+- [ ] Test security process with dummy repositories
+- [ ] Install/configure both TruffleHog and Gitleaks if not already available
+
+**REMEMBER**: Overconfident assumptions about security protection led to real API key exposure. When in doubt, research and verify - never assume.
 
 ## 📚 Lessons Learned References
 
